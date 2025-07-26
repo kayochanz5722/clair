@@ -1,0 +1,15 @@
+{
+  "version": "0.1.0",
+  "description": "Обновление приложения",
+  "size": "15.2 MB",
+  "download_url": "https://github.com/kayochanz5722/clair/raw/main/mysetup.exe",
+  "file_name": "mysetup.exe",
+  "release_date": "2024-01-15",
+  "platforms": {
+    "windows": {
+      "download_url": "https://github.com/kayochanz5722/clair/raw/main/mysetup.exe",
+      "file_name": "mysetup.exe",
+      "size": "15.2 MB"
+    }
+  }
+}
