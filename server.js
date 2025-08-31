@@ -54,39 +54,85 @@ wss.on('connection', (ws, req) => {
           
         case 'new_message':
           // Пересылаем сообщение всем участникам чата
-          const chatRoom = chatRooms.get(chatId);
-          if (chatRoom) {
+          // Если пользователь не аутентифицирован, используем chatId из сообщения
+          let targetChatId = chatId;
+          if (!targetChatId && message.data.chat_id) {
+            targetChatId = message.data.chat_id;
+          }
+          
+          if (targetChatId) {
+            // Создаем комнату если её нет
+            if (!chatRooms.has(targetChatId)) {
+              chatRooms.set(targetChatId, new Set());
+            }
+            
+            // Добавляем текущее соединение в комнату если его там нет
+            if (!chatRooms.get(targetChatId).has(ws)) {
+              chatRooms.get(targetChatId).add(ws);
+            }
+            
+            // Убеждаемся, что у нас есть chatId для сообщения
+            const messageData = {
+              ...message.data,
+              chat_id: targetChatId // Добавляем chatId если его нет
+            };
+            
             const messageToSend = JSON.stringify({
               type: 'new_message',
-              data: message.data
+              data: messageData
             });
             
-            chatRoom.forEach((client) => {
+            chatRooms.get(targetChatId).forEach((client) => {
               if (client.readyState === WebSocket.OPEN) {
                 client.send(messageToSend);
               }
             });
             
-            console.log(`💬 Сообщение отправлено в чат ${chatId}`);
+            console.log(`💬 Сообщение отправлено в чат ${targetChatId}:`, messageData.content);
+          } else {
+            console.log('❌ Не удалось определить chatId для сообщения');
           }
           break;
           
         case 'typing_status':
           // Пересылаем статус печатания
-          const typingRoom = chatRooms.get(chatId);
-          if (typingRoom) {
+          // Если пользователь не аутентифицирован, используем chatId из сообщения
+          let typingChatId = chatId;
+          if (!typingChatId && message.data.chat_id) {
+            typingChatId = message.data.chat_id;
+          }
+          
+          if (typingChatId) {
+            // Создаем комнату если её нет
+            if (!chatRooms.has(typingChatId)) {
+              chatRooms.set(typingChatId, new Set());
+            }
+            
+            // Добавляем текущее соединение в комнату если его там нет
+            if (!chatRooms.get(typingChatId).has(ws)) {
+              chatRooms.get(typingChatId).add(ws);
+            }
+            
+            // Убеждаемся, что у нас есть все необходимые данные
+            const typingData = {
+              ...message.data,
+              chat_id: typingChatId // Добавляем chatId если его нет
+            };
+            
             const typingMessage = JSON.stringify({
               type: 'user_typing',
-              data: message.data
+              data: typingData
             });
             
-            typingRoom.forEach((client) => {
+            chatRooms.get(typingChatId).forEach((client) => {
               if (client.readyState === WebSocket.OPEN && client !== ws) {
                 client.send(typingMessage);
               }
             });
             
-            console.log(`⌨️ Статус печатания отправлен в чат ${chatId}`);
+            console.log(`⌨️ Статус печатания отправлен в чат ${typingChatId}: пользователь ${typingData.user_id} ${typingData.is_typing ? 'печатает' : 'не печатает'}`);
+          } else {
+            console.log('❌ Не удалось определить chatId для статуса печатания');
           }
           break;
           
