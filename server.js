@@ -54,11 +54,7 @@ wss.on('connection', (ws, req) => {
           
         case 'new_message':
           // Пересылаем сообщение всем участникам чата
-          // Если пользователь не аутентифицирован, используем chatId из сообщения
-          let targetChatId = chatId;
-          if (!targetChatId && message.data.chat_id) {
-            targetChatId = message.data.chat_id;
-          }
+          let targetChatId = chatId || message.data.chat_id;
           
           if (targetChatId) {
             // Создаем комнату если её нет
@@ -74,7 +70,7 @@ wss.on('connection', (ws, req) => {
             // Убеждаемся, что у нас есть chatId для сообщения
             const messageData = {
               ...message.data,
-              chat_id: targetChatId // Добавляем chatId если его нет
+              chat_id: targetChatId
             };
             
             const messageToSend = JSON.stringify({
@@ -82,9 +78,11 @@ wss.on('connection', (ws, req) => {
               data: messageData
             });
             
+            // Отправляем сообщение всем участникам чата, кроме отправителя
             chatRooms.get(targetChatId).forEach((client) => {
-              if (client.readyState === WebSocket.OPEN) {
+              if (client.readyState === WebSocket.OPEN && client !== ws) {
                 client.send(messageToSend);
+                console.log(`💬 Сообщение отправлено клиенту в чате ${targetChatId}`);
               }
             });
             
@@ -96,11 +94,7 @@ wss.on('connection', (ws, req) => {
           
         case 'typing_status':
           // Пересылаем статус печатания
-          // Если пользователь не аутентифицирован, используем chatId из сообщения
-          let typingChatId = chatId;
-          if (!typingChatId && message.data.chat_id) {
-            typingChatId = message.data.chat_id;
-          }
+          let typingChatId = chatId || message.data.chat_id;
           
           if (typingChatId) {
             // Создаем комнату если её нет
@@ -116,7 +110,7 @@ wss.on('connection', (ws, req) => {
             // Убеждаемся, что у нас есть все необходимые данные
             const typingData = {
               ...message.data,
-              chat_id: typingChatId // Добавляем chatId если его нет
+              chat_id: typingChatId
             };
             
             const typingMessage = JSON.stringify({
@@ -124,9 +118,11 @@ wss.on('connection', (ws, req) => {
               data: typingData
             });
             
+            // Отправляем статус печатания всем участникам чата, кроме отправителя
             chatRooms.get(typingChatId).forEach((client) => {
               if (client.readyState === WebSocket.OPEN && client !== ws) {
                 client.send(typingMessage);
+                console.log(`⌨️ Статус печатания отправлен клиенту в чате ${typingChatId}`);
               }
             });
             
