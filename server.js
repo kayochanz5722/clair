@@ -34,6 +34,7 @@ wss.on('connection', (ws, req) => {
           connectedUsers.set(ws, { userId, chatIds: userChatIds });
           
           console.log(`🔐 Пользователь ${userId} аутентифицирован`);
+          console.log(`📊 Всего подключенных пользователей: ${connectedUsers.size}`);
           
           // Отправляем подтверждение
           ws.send(JSON.stringify({
@@ -50,6 +51,7 @@ wss.on('connection', (ws, req) => {
           // Создаем комнату чата если её нет
           if (!chatRooms.has(chatId)) {
             chatRooms.set(chatId, new Set());
+            console.log(`🏠 Создана комната чата: ${chatId}`);
           }
           chatRooms.get(chatId).add(ws);
           
@@ -57,6 +59,8 @@ wss.on('connection', (ws, req) => {
           connectedUsers.set(ws, { userId, chatIds: userChatIds });
           
           console.log(`🔗 Пользователь ${userId} присоединился к чату ${chatId}`);
+          console.log(`👥 В чате ${chatId} теперь ${chatRooms.get(chatId).size} участников`);
+          console.log(`📊 Всего комнат чатов: ${chatRooms.size}`);
           break;
           
         case 'leave_chat':
@@ -71,6 +75,7 @@ wss.on('connection', (ws, req) => {
             // Если комната пуста, удаляем её
             if (chatRooms.get(leaveChatId).size === 0) {
               chatRooms.delete(leaveChatId);
+              console.log(`🏚️ Комната чата ${leaveChatId} удалена (пуста)`);
             }
           }
           
@@ -85,20 +90,28 @@ wss.on('connection', (ws, req) => {
           const messageChatId = message.data.chat_id;
           const chatRoom = chatRooms.get(messageChatId);
           
+          console.log(`💬 Обрабатываем новое сообщение в чате ${messageChatId}`);
+          console.log(`👥 Найдено участников в чате: ${chatRoom ? chatRoom.size : 0}`);
+          
           if (chatRoom) {
             const messageToSend = JSON.stringify({
               type: 'new_message',
               data: message.data
             });
             
+            let sentCount = 0;
             chatRoom.forEach((client) => {
               // НЕ отправляем сообщение отправителю
               if (client.readyState === WebSocket.OPEN && client !== ws) {
                 client.send(messageToSend);
+                sentCount++;
+                console.log(`📤 Сообщение отправлено участнику ${sentCount}`);
               }
             });
             
-            console.log(`💬 Сообщение отправлено в чат ${messageChatId} (исключая отправителя)`);
+            console.log(`💬 Сообщение отправлено в чат ${messageChatId} (${sentCount} получателей, исключая отправителя)`);
+          } else {
+            console.log(`⚠️ Комната чата ${messageChatId} не найдена`);
           }
           break;
           
@@ -113,13 +126,15 @@ wss.on('connection', (ws, req) => {
               data: message.data
             });
             
+            let sentCount = 0;
             typingRoom.forEach((client) => {
               if (client.readyState === WebSocket.OPEN && client !== ws) {
                 client.send(typingMessage);
+                sentCount++;
               }
             });
             
-            console.log(`⌨️ Статус печатания отправлен в чат ${typingChatId}`);
+            console.log(`⌨️ Статус печатания отправлен в чат ${typingChatId} (${sentCount} получателей)`);
           }
           break;
           
@@ -144,12 +159,14 @@ wss.on('connection', (ws, req) => {
           // Если комната пуста, удаляем её
           if (chatRooms.get(chatId).size === 0) {
             chatRooms.delete(chatId);
+            console.log(`🏚️ Комната чата ${chatId} удалена (пуста)`);
           }
         }
       });
     }
     
     connectedUsers.delete(ws);
+    console.log(`📊 Осталось подключенных пользователей: ${connectedUsers.size}`);
   });
   
   // Обрабатываем ошибки
