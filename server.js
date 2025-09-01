@@ -93,6 +93,7 @@ wss.on('connection', (ws, req) => {
           
           console.log(`💬 Обрабатываем новое сообщение в чате ${messageChatId}`);
           console.log(`👥 Найдено участников в чате: ${chatRoom ? chatRoom.size : 0}`);
+          console.log(`🔍 Все комнаты:`, Array.from(chatRooms.keys()));
           
           if (chatRoom) {
             const messageToSend = JSON.stringify({
@@ -113,6 +114,7 @@ wss.on('connection', (ws, req) => {
             console.log(`💬 Сообщение отправлено в чат ${messageChatId} (${sentCount} получателей, исключая отправителя)`);
           } else {
             console.log(`⚠️ Комната чата ${messageChatId} не найдена`);
+            console.log(`🔍 Доступные комнаты:`, Array.from(chatRooms.keys()));
           }
           break;
           
