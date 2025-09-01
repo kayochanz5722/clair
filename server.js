@@ -61,6 +61,7 @@ wss.on('connection', (ws, req) => {
           console.log(`🔗 Пользователь ${userId} присоединился к чату ${chatId}`);
           console.log(`👥 В чате ${chatId} теперь ${chatRooms.get(chatId).size} участников`);
           console.log(`📊 Всего комнат чатов: ${chatRooms.size}`);
+          console.log(`🔍 Текущие комнаты:`, Array.from(chatRooms.keys()));
           break;
           
         case 'leave_chat':
