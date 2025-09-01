@@ -1,20 +1,15 @@
 const WebSocket = require('ws');
 const http = require('http');
-const config = require('./config');
 
 // Создаем HTTP сервер
 const server = http.createServer();
 
-// Создаем WebSocket сервер с настройками
-const wss = new WebSocket.Server({ 
-  server,
-  perMessageDeflate: config.ws.perMessageDeflate,
-  maxPayload: config.ws.maxPayload,
-});
+// Создаем WebSocket сервер
+const wss = new WebSocket.Server({ server });
 
-// Храним подключенных пользователей
-const connectedUsers = new Map();
-const chatRooms = new Map();
+// Храним подключенных пользователей и их чаты
+const connectedUsers = new Map(); // ws -> { userId, chatIds: Set }
+const chatRooms = new Map(); // chatId -> Set of ws
 
 console.log('🚀 WebSocket сервер запускается...');
 
@@ -22,7 +17,7 @@ wss.on('connection', (ws, req) => {
   console.log('💬 Новое WebSocket подключение');
   
   let userId = null;
-  let chatId = null;
+  let userChatIds = new Set();
   
   // Обрабатываем входящие сообщения
   ws.on('message', (data) => {
@@ -34,101 +29,97 @@ wss.on('connection', (ws, req) => {
         case 'auth':
           // Аутентификация пользователя
           userId = message.data.user_id;
-          chatId = message.data.chat_id;
           
-          // Добавляем пользователя в комнату чата
-          if (!chatRooms.has(chatId)) {
-            chatRooms.set(chatId, new Set());
-          }
-          chatRooms.get(chatId).add(ws);
-          connectedUsers.set(ws, { userId, chatId });
+          // Добавляем пользователя в общий список подключенных
+          connectedUsers.set(ws, { userId, chatIds: userChatIds });
           
-          console.log(`🔐 Пользователь ${userId} подключен к чату ${chatId}`);
+          console.log(`🔐 Пользователь ${userId} аутентифицирован`);
           
           // Отправляем подтверждение
           ws.send(JSON.stringify({
             type: 'auth_success',
-            data: { user_id: userId, chat_id: chatId }
+            data: { user_id: userId }
           }));
           break;
           
-        case 'new_message':
-          // Пересылаем сообщение всем участникам чата
-          let targetChatId = chatId || message.data.chat_id;
+        case 'join_chat':
+          // Пользователь присоединяется к чату
+          const chatId = message.data.chat_id;
+          userChatIds.add(chatId);
           
-          if (targetChatId) {
-            // Создаем комнату если её нет
-            if (!chatRooms.has(targetChatId)) {
-              chatRooms.set(targetChatId, new Set());
+          // Создаем комнату чата если её нет
+          if (!chatRooms.has(chatId)) {
+            chatRooms.set(chatId, new Set());
+          }
+          chatRooms.get(chatId).add(ws);
+          
+          // Обновляем информацию о пользователе
+          connectedUsers.set(ws, { userId, chatIds: userChatIds });
+          
+          console.log(`🔗 Пользователь ${userId} присоединился к чату ${chatId}`);
+          break;
+          
+        case 'leave_chat':
+          // Пользователь покидает чат
+          const leaveChatId = message.data.chat_id;
+          userChatIds.delete(leaveChatId);
+          
+          // Удаляем пользователя из комнаты чата
+          if (chatRooms.has(leaveChatId)) {
+            chatRooms.get(leaveChatId).delete(ws);
+            
+            // Если комната пуста, удаляем её
+            if (chatRooms.get(leaveChatId).size === 0) {
+              chatRooms.delete(leaveChatId);
             }
-            
-            // Добавляем текущее соединение в комнату если его там нет
-            if (!chatRooms.get(targetChatId).has(ws)) {
-              chatRooms.get(targetChatId).add(ws);
-            }
-            
-            // Убеждаемся, что у нас есть chatId для сообщения
-            const messageData = {
-              ...message.data,
-              chat_id: targetChatId
-            };
-            
+          }
+          
+          // Обновляем информацию о пользователе
+          connectedUsers.set(ws, { userId, chatIds: userChatIds });
+          
+          console.log(`🔌 Пользователь ${userId} покинул чат ${leaveChatId}`);
+          break;
+          
+        case 'new_message':
+          // Пересылаем сообщение всем участникам чата, кроме отправителя
+          const messageChatId = message.data.chat_id;
+          const chatRoom = chatRooms.get(messageChatId);
+          
+          if (chatRoom) {
             const messageToSend = JSON.stringify({
               type: 'new_message',
-              data: messageData
+              data: message.data
             });
             
-            // Отправляем сообщение всем участникам чата, кроме отправителя
-            chatRooms.get(targetChatId).forEach((client) => {
+            chatRoom.forEach((client) => {
+              // НЕ отправляем сообщение отправителю
               if (client.readyState === WebSocket.OPEN && client !== ws) {
                 client.send(messageToSend);
-                console.log(`💬 Сообщение отправлено клиенту в чате ${targetChatId}`);
               }
             });
             
-            console.log(`💬 Сообщение отправлено в чат ${targetChatId}:`, messageData.content);
-          } else {
-            console.log('❌ Не удалось определить chatId для сообщения');
+            console.log(`💬 Сообщение отправлено в чат ${messageChatId} (исключая отправителя)`);
           }
           break;
           
         case 'typing_status':
           // Пересылаем статус печатания
-          let typingChatId = chatId || message.data.chat_id;
+          const typingChatId = message.data.chat_id;
+          const typingRoom = chatRooms.get(typingChatId);
           
-          if (typingChatId) {
-            // Создаем комнату если её нет
-            if (!chatRooms.has(typingChatId)) {
-              chatRooms.set(typingChatId, new Set());
-            }
-            
-            // Добавляем текущее соединение в комнату если его там нет
-            if (!chatRooms.get(typingChatId).has(ws)) {
-              chatRooms.get(typingChatId).add(ws);
-            }
-            
-            // Убеждаемся, что у нас есть все необходимые данные
-            const typingData = {
-              ...message.data,
-              chat_id: typingChatId
-            };
-            
+          if (typingRoom) {
             const typingMessage = JSON.stringify({
               type: 'user_typing',
-              data: typingData
+              data: message.data
             });
             
-            // Отправляем статус печатания всем участникам чата, кроме отправителя
-            chatRooms.get(typingChatId).forEach((client) => {
+            typingRoom.forEach((client) => {
               if (client.readyState === WebSocket.OPEN && client !== ws) {
                 client.send(typingMessage);
-                console.log(`⌨️ Статус печатания отправлен клиенту в чате ${typingChatId}`);
               }
             });
             
-            console.log(`⌨️ Статус печатания отправлен в чат ${typingChatId}: пользователь ${typingData.user_id} ${typingData.is_typing ? 'печатает' : 'не печатает'}`);
-          } else {
-            console.log('❌ Не удалось определить chatId для статуса печатания');
+            console.log(`⌨️ Статус печатания отправлен в чат ${typingChatId}`);
           }
           break;
           
@@ -142,16 +133,20 @@ wss.on('connection', (ws, req) => {
   
   // Обрабатываем отключение
   ws.on('close', () => {
-    console.log(`🔌 Пользователь ${userId} отключился от чата ${chatId}`);
+    console.log(`🔌 Пользователь ${userId} отключился`);
     
-    // Удаляем пользователя из комнаты
-    if (chatId && chatRooms.has(chatId)) {
-      chatRooms.get(chatId).delete(ws);
-      
-      // Если комната пуста, удаляем её
-      if (chatRooms.get(chatId).size === 0) {
-        chatRooms.delete(chatId);
-      }
+    // Удаляем пользователя из всех чатов
+    if (userChatIds.size > 0) {
+      userChatIds.forEach(chatId => {
+        if (chatRooms.has(chatId)) {
+          chatRooms.get(chatId).delete(ws);
+          
+          // Если комната пуста, удаляем её
+          if (chatRooms.get(chatId).size === 0) {
+            chatRooms.delete(chatId);
+          }
+        }
+      });
     }
     
     connectedUsers.delete(ws);
@@ -164,12 +159,10 @@ wss.on('connection', (ws, req) => {
 });
 
 // Запускаем сервер
-server.listen(config.port, config.host, () => {
-  console.log(`🚀 WebSocket сервер запущен на ${config.host}:${config.port}`);
-  console.log(`🔗 Локальное подключение: ws://localhost:${config.port}`);
-  console.log(`🌐 Внешнее подключение: ws://your-vps-ip:${config.port}`);
-  console.log(`🔒 Для продакшена используйте: wss://your-domain.com`);
-  console.log(`⚙️ Максимум подключений: ${config.maxConnections}`);
+const PORT = process.env.PORT || 8080;
+server.listen(PORT, () => {
+  console.log(`🚀 WebSocket сервер запущен на порту ${PORT}`);
+  console.log(`🔗 Подключение: ws://localhost:${PORT}`);
 });
 
 // Graceful shutdown
